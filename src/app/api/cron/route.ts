@@ -101,71 +101,48 @@ export async function GET(request: Request) {
             continue;
           }
 
-          for (const deal of deals) {
-            const contact = deal.contact as
-              | {
-                  id: number | string;
-                  first_name?: string;
-                  last_name?: string;
-                  email?: string;
-                }
-              | null;
+        for (const deal of deals) {
+            const contact = Array.isArray(deal.contact)
+                ? deal.contact[0]
+                : deal.contact;
 
             if (!contact?.email) {
-              continue;
+                continue;
             }
 
-            // 4. Vérifier si l'email a déjà été envoyé (anti-doublon)
-            const { data: alreadySent, error: logCheckError } = await supabaseAdmin
-              .from("email_logs")
-              .select("id")
-              .eq("deal_id", deal.id)
-              .eq("email_sequence_step_id", step.id)
-              .maybeSingle();
-
-            if (logCheckError) {
-              throw logCheckError;
-            }
-
-            if (alreadySent) {
-              continue;
-            }
-
-            // 5. Préparer et envoyer l'email
             const personalizedBody = parseTemplate(step.body_html, {
-              contact_name: contact.first_name ?? "",
-              deal_title: deal.title ?? "",
+                contact_name: contact.first_name ?? "",
+                deal_title: deal.title ?? "",
             });
 
             const { error: resendError } = await resend.emails.send({
-              from: "Luxy Formation <contact@velt.re>",
-              to: [contact.email],
-              subject: step.subject,
-              html: personalizedBody,
+                from: "Luxy Formation <contact@votre-domaine.fr>",
+                to: [contact.email],
+                subject: step.subject,
+                html: personalizedBody,
             });
 
             if (resendError) {
-              console.error("RESEND ERROR:", resendError);
-              continue;
+                console.error("RESEND ERROR:", resendError);
+                continue;
             }
 
-            // 6. Loguer l'envoi pour ne pas recommencer demain
             const { error: insertLogError } = await supabaseAdmin
-              .from("email_logs")
-              .insert([
+                .from("email_logs")
+                .insert([
                 {
-                  crm_contact_id: contact.id,
-                  deal_id: deal.id,
-                  email_sequence_step_id: step.id,
+                    crm_contact_id: contact.id,
+                    deal_id: deal.id,
+                    email_sequence_step_id: step.id,
                 },
-              ]);
+                ]);
 
             if (insertLogError) {
-              throw insertLogError;
+                throw insertLogError;
             }
 
             sentLogs.push(`Email envoyé à ${contact.email} pour le deal ${deal.id}`);
-          }
+        }
         }
       }
     }
