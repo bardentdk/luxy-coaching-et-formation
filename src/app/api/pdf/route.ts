@@ -42,12 +42,9 @@ export async function GET(request: Request) {
     });
 
     await browser.close();
-    const body = pdfBuffer.buffer.slice(
-      pdfBuffer.byteOffset,
-      pdfBuffer.byteOffset + pdfBuffer.byteLength
-    );
+    const body = new Blob([pdfBuffer], { type: 'application/pdf' });
 
-    return new NextResponse(body, {
+    return new Response(body, {
       headers: {
         'Content-Type': 'application/pdf',
         'Content-Disposition': `attachment; filename="Devis_${id}.pdf"`,
