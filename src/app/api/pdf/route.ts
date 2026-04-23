@@ -42,13 +42,23 @@ export async function GET(request: Request) {
     });
 
     await browser.close();
+    const body = pdfBuffer.buffer.slice(
+      pdfBuffer.byteOffset,
+      pdfBuffer.byteOffset + pdfBuffer.byteLength
+    );
 
-    return new NextResponse(pdfBuffer, {
+    return new NextResponse(body, {
       headers: {
         'Content-Type': 'application/pdf',
         'Content-Disposition': `attachment; filename="Devis_${id}.pdf"`,
       },
     });
+    // return new NextResponse(pdfBuffer, {
+    //   headers: {
+    //     'Content-Type': 'application/pdf',
+    //     'Content-Disposition': `attachment; filename="Devis_${id}.pdf"`,
+    //   },
+    // });
   } catch (error: any) {
     console.error("Erreur PDF:", error);
     if (browser) await browser.close();
