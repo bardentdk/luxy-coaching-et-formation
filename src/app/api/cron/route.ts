@@ -2,16 +2,11 @@ import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 import { Resend } from "resend";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
-
-// Utilisation du rôle Admin pour contourner les RLS en interne
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 // Fonction pour remplacer les variables {{...}}
-function parseTemplate(template: string, data: any) {
+function parseTemplate(template: string, data: Record<string, any>) {
   return template.replace(/{{(.*?)}}/g, (match, key) => {
     return data[key.trim()] || match;
   });
@@ -19,80 +14,157 @@ function parseTemplate(template: string, data: any) {
 
 export async function GET(request: Request) {
   // Sécurité : Vérifier le secret Cron (Vercel ou autre)
-  const authHeader = request.headers.get('authorization');
+  const authHeader = request.headers.get("authorization");
   if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-    return new NextResponse('Unauthorized', { status: 401 });
+    return new NextResponse("Unauthorized", { status: 401 });
   }
 
   try {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const resendApiKey = process.env.RESEND_API_KEY;
+
+    if (!supabaseUrl) {
+      return NextResponse.json(
+        { error: "NEXT_PUBLIC_SUPABASE_URL manquante." },
+        { status: 500 }
+      );
+    }
+
+    if (!supabaseServiceRoleKey) {
+      return NextResponse.json(
+        { error: "SUPABASE_SERVICE_ROLE_KEY manquante." },
+        { status: 500 }
+      );
+    }
+
+    if (!resendApiKey) {
+      return NextResponse.json(
+        { error: "RESEND_API_KEY manquante." },
+        { status: 500 }
+      );
+    }
+
+    // Initialisation uniquement au moment de l'appel
+    const resend = new Resend(resendApiKey);
+
+    // Utilisation du rôle Admin pour contourner les RLS en interne
+    const supabaseAdmin = createClient(
+      supabaseUrl,
+      supabaseServiceRoleKey
+    );
+
     const sentLogs: string[] = [];
 
     // 1. Récupérer les séquences actives avec leurs étapes
-    const { data: sequences } = await supabaseAdmin
+    const { data: sequences, error: sequencesError } = await supabaseAdmin
       .from("email_sequences")
       .select("*, email_sequence_steps(*)")
       .eq("is_active", true);
 
-    if (!sequences) return NextResponse.json({ message: "Aucune séquence active." });
+    if (sequencesError) {
+      throw sequencesError;
+    }
+
+    if (!sequences || sequences.length === 0) {
+      return NextResponse.json({
+        success: true,
+        message: "Aucune séquence active.",
+        processed: [],
+      });
+    }
 
     for (const sequence of sequences) {
-      for (const step of sequence.email_sequence_steps) {
-        
+      for (const step of sequence.email_sequence_steps ?? []) {
         // 2. Calculer la date cible (Aujourd'hui - X jours de délai)
         const targetDate = new Date();
         targetDate.setDate(targetDate.getDate() - step.delay_days);
-        const dateString = targetDate.toISOString().split('T')[0];
+        const dateString = targetDate.toISOString().split("T")[0];
 
         // 3. Trouver les deals créés à cette date précise pour ce trigger
-        // Ici on traite le trigger "deal_created"
         if (sequence.trigger === "deal_created") {
-          const { data: deals } = await supabaseAdmin
+          const { data: deals, error: dealsError } = await supabaseAdmin
             .from("deals")
             .select(`
-              id, title, 
+              id,
+              title,
               contact:crm_contacts(id, first_name, last_name, email)
             `)
             .gte("created_at", `${dateString}T00:00:00`)
             .lte("created_at", `${dateString}T23:59:59`);
 
-          if (!deals) continue;
+          if (dealsError) {
+            throw dealsError;
+          }
+
+          if (!deals || deals.length === 0) {
+            continue;
+          }
 
           for (const deal of deals) {
-            const contact = deal.contact as any;
-            if (!contact?.email) continue;
+            const contact = deal.contact as
+              | {
+                  id: number | string;
+                  first_name?: string;
+                  last_name?: string;
+                  email?: string;
+                }
+              | null;
 
-            // 4. Vérifier si l'email a déjà été envoyé (Anti-Doublon)
-            const { data: alreadySent } = await supabaseAdmin
+            if (!contact?.email) {
+              continue;
+            }
+
+            // 4. Vérifier si l'email a déjà été envoyé (anti-doublon)
+            const { data: alreadySent, error: logCheckError } = await supabaseAdmin
               .from("email_logs")
               .select("id")
               .eq("deal_id", deal.id)
               .eq("email_sequence_step_id", step.id)
-              .single();
+              .maybeSingle();
 
-            if (alreadySent) continue;
+            if (logCheckError) {
+              throw logCheckError;
+            }
+
+            if (alreadySent) {
+              continue;
+            }
 
             // 5. Préparer et envoyer l'email
             const personalizedBody = parseTemplate(step.body_html, {
-              contact_name: contact.first_name,
-              deal_title: deal.title
+              contact_name: contact.first_name ?? "",
+              deal_title: deal.title ?? "",
             });
 
-            const { data, error } = await resend.emails.send({
-              from: 'Luxy Formation <contact@votre-domaine.fr>',
+            const { error: resendError } = await resend.emails.send({
+              from: "Luxy Formation <contact@velt.re>",
               to: [contact.email],
               subject: step.subject,
               html: personalizedBody,
             });
 
-            if (!error) {
-              // 6. Loguer l'envoi pour ne pas recommencer demain
-              await supabaseAdmin.from("email_logs").insert([{
-                crm_contact_id: contact.id,
-                deal_id: deal.id,
-                email_sequence_step_id: step.id
-              }]);
-              sentLogs.push(`Email envoyé à ${contact.email} pour le deal ${deal.id}`);
+            if (resendError) {
+              console.error("RESEND ERROR:", resendError);
+              continue;
             }
+
+            // 6. Loguer l'envoi pour ne pas recommencer demain
+            const { error: insertLogError } = await supabaseAdmin
+              .from("email_logs")
+              .insert([
+                {
+                  crm_contact_id: contact.id,
+                  deal_id: deal.id,
+                  email_sequence_step_id: step.id,
+                },
+              ]);
+
+            if (insertLogError) {
+              throw insertLogError;
+            }
+
+            sentLogs.push(`Email envoyé à ${contact.email} pour le deal ${deal.id}`);
           }
         }
       }
@@ -101,6 +173,9 @@ export async function GET(request: Request) {
     return NextResponse.json({ success: true, processed: sentLogs });
   } catch (error: any) {
     console.error("CRON ERROR:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json(
+      { error: error?.message || "Erreur inconnue." },
+      { status: 500 }
+    );
   }
 }
