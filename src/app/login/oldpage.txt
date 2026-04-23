@@ -1,0 +1,121 @@
+"use client";
+
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
+import { Mail, Lock, ArrowRight, Loader2, AlertCircle } from "lucide-react";
+
+export default function LoginPage() {
+  const router = useRouter();
+  const supabase = createClient();
+  
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
+    setError(null);
+
+    // 1. Authentification Supabase
+    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    if (authError) {
+      setError("Identifiants invalides ou problème de connexion.");
+      setIsLoading(false);
+      return;
+    }
+
+    // 2. Récupération du rôle dans la table 'users' (calquée sur ton modèle Laravel)
+    const { data: userData, error: userError } = await supabase
+      .from("users")
+      .select("role")
+      .eq("id", authData.user.id)
+      .single();
+
+    if (userError || !userData) {
+      console.error("ERREUR SUPABASE:", userError); // <-- Ajoute cette ligne
+      await supabase.auth.signOut();
+      setError("Erreur de configuration de compte. Contactez l'administrateur.");
+      setIsLoading(false);
+      return;
+    }
+
+    // 3. Redirection basée sur le rôle
+    const role = userData.role;
+    if (role === "admin") {
+      router.push("/admin-dashboard");
+    } else if (role === "commercial") {
+      router.push("/dashboard");
+    } else if (role === "apprenant") {
+      router.push("/espace-apprenant");
+    } else {
+      router.push("/");
+    }
+    
+    router.refresh(); // Force le middleware à re-vérifier la session
+  };
+
+  return (
+    <div className="min-h-screen bg-cream flex items-center justify-center p-6 relative overflow-hidden">
+      <div className="dot-grid opacity-50" />
+
+      <div className="w-full max-w-md bg-white rounded-3xl p-10 shadow-hover border border-navy/5 relative z-10">
+        <div className="text-center mb-8">
+          <div className="w-16 h-16 bg-navy rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-card">
+            <span className="text-gold font-black text-3xl">L</span>
+          </div>
+          <h1 className="text-2xl font-black text-navy tracking-tight mb-2">Espace Pro</h1>
+          <p className="text-sm text-navy/50">Luxy Formation Management System</p>
+        </div>
+
+        {error && (
+          <div className="mb-6 p-4 bg-red-50 border border-red-100 text-red-600 rounded-xl text-sm flex items-center gap-3 animate-in fade-in slide-in-from-top-1">
+            <AlertCircle size={18} />
+            {error}
+          </div>
+        )}
+
+        <form onSubmit={handleLogin} className="flex flex-col gap-5">
+          <div>
+            <label className="block text-xs font-bold text-navy mb-2 uppercase tracking-wide">Email</label>
+            <div className="relative">
+              <Mail size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-navy/30" />
+              <input 
+                type="email" required value={email} onChange={(e) => setEmail(e.target.value)}
+                className="w-full pl-12 pr-4 py-3.5 border-2 border-navy/10 rounded-xl text-sm bg-cream focus:bg-white focus:border-gold outline-none transition-colors" 
+                placeholder="nom@luxyformation.fr"
+              />
+            </div>
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-xs font-bold text-navy uppercase tracking-wide">Mot de passe</label>
+            </div>
+            <div className="relative">
+              <Lock size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-navy/30" />
+              <input 
+                type="password" required value={password} onChange={(e) => setPassword(e.target.value)}
+                className="w-full pl-12 pr-4 py-3.5 border-2 border-navy/10 rounded-xl text-sm bg-cream focus:bg-white focus:border-gold outline-none transition-colors" 
+              />
+            </div>
+          </div>
+
+          <button 
+            type="submit" disabled={isLoading}
+            className="w-full mt-2 py-4 rounded-xl bg-gold text-navy font-black text-sm hover:bg-gold-light transition-all flex items-center justify-center gap-2 shadow-gold disabled:opacity-70"
+          >
+            {isLoading ? <Loader2 size={18} className="animate-spin" /> : <>Se connecter <ArrowRight size={18} /></>}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
