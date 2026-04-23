@@ -1,10 +1,11 @@
-"use client";
-
+// "use client";
 import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Save, Plus, Trash2, Loader2, User, FileText, Briefcase } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+
+export const dynamic = 'force-dynamic';
 
 type Contact = { id: number; first_name: string; last_name: string; company: string };
 type Deal = { id: number; title: string; crm_contact_id: number };
