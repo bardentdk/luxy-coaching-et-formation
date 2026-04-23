@@ -1,11 +1,11 @@
-// "use client";
+"use client";
 import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Save, Plus, Trash2, Loader2, User, FileText, Briefcase } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { Suspense } from 'react'
 
-export const dynamic = 'force-dynamic';
 
 type Contact = { id: number; first_name: string; last_name: string; company: string };
 type Deal = { id: number; title: string; crm_contact_id: number };
@@ -21,7 +21,7 @@ type QuoteItem = {
   discount_percent: number;
 };
 
-export default function QuoteCreatePage() {
+function QuoteCreatePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const supabase = createClient();
@@ -350,4 +350,12 @@ export default function QuoteCreatePage() {
       </form>
     </div>
   );
+}
+
+export default function Page() {
+  return (
+    <Suspense fallback={null}>
+      <QuoteCreatePage />
+    </Suspense>
+  )
 }
