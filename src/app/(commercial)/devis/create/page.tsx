@@ -206,9 +206,14 @@ export default function QuoteCreatePage() {
                 required
                 value={selectedContactId}
                 onChange={e => {
-                  setSelectedContactId(e.target.value);
-                  setSelectedDealId(""); // Reset le deal si on change de client
+                  const value = e.target.value;
+                  setSelectedContactId(value === "" ? "" : Number(value));
+                  setSelectedDealId("");
                 }}
+                // onChange={e => {
+                //   setSelectedContactId(e.target.value);
+                //   setSelectedDealId(""); // Reset le deal si on change de client
+                // }}
                 className="w-full p-3.5 border-2 border-navy/5 rounded-xl text-sm font-medium bg-[#F8F9FB] focus:bg-white focus:border-gold outline-none transition-all"
               >
                 <option value="">-- Sélectionner un client --</option>
@@ -221,7 +226,11 @@ export default function QuoteCreatePage() {
               <label className="block text-xs font-bold text-navy mb-2">Opportunité liée (Optionnel)</label>
               <select 
                 value={selectedDealId}
-                onChange={e => setSelectedDealId(e.target.value)}
+                onChange={e => {
+                  const value = e.target.value;
+                  setSelectedDealId(value === "" ? "" : Number(value));
+                }}
+                // onChange={e => setSelectedDealId(e.target.value)}
                 disabled={!selectedContactId}
                 className="w-full p-3.5 border-2 border-navy/5 rounded-xl text-sm font-medium bg-[#F8F9FB] focus:bg-white focus:border-gold outline-none transition-all disabled:opacity-50"
               >
