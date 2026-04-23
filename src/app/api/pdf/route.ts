@@ -1,5 +1,6 @@
 import puppeteer from 'puppeteer';
 import { NextResponse } from 'next/server';
+import { Buffer } from 'node:buffer';
 
 export const dynamic = 'force-dynamic';
 
@@ -42,9 +43,9 @@ export async function GET(request: Request) {
     });
 
     await browser.close();
-    const body = new Blob([pdfBuffer], { type: 'application/pdf' });
+    const pdfNodeBuffer = Buffer.from(pdfBuffer);
 
-    return new Response(body, {
+    return new NextResponse(pdfNodeBuffer, {
       headers: {
         'Content-Type': 'application/pdf',
         'Content-Disposition': `attachment; filename="Devis_${id}.pdf"`,
